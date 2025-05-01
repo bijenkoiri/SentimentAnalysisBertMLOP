@@ -1,0 +1,52 @@
+name: FastAPI SentimentBERT CI-CD
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+env:
+  IMAGE_NAME: sentimentmlapi
+
+jobs:
+  build-test-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: "3.10"
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install gdown
+
+    - name: Download checkpoint folder from Google Drive
+      run: |
+        gdown --folder https://drive.google.com/drive/folders/1_g6NKcUfkpUOKgbq1vBio1Pm5DmIeHAA
+
+    - name: Test FastAPI app runs
+      run: |
+        uvicorn main:app --host 0.0.0.0 --port 8000 --reload &
+        SERVER_PID=$!
+        sleep 20
+        kill $SERVER_PID
+
+    - name: Set Docker Image Tag
+      run: echo "IMAGE_TAG=${GITHUB_SHA::7}" >> $GITHUB_ENV
+
+    - name: Login to Docker Hub
+      run: echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+
+    - name: Build Docker Image
+      run: docker build -t ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }} .
+
+    - name: Push Docker Image
+      run: docker push ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ env.IMAGE_TAG }}
